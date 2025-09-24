@@ -1,4 +1,4 @@
-const CACHE = "pwa-chat-v1";
+const CACHE = "pwa-chat-v2";
 const ASSETS = ["./","./index.html","./main.js","./manifest.json","./config.js"];
 
 self.addEventListener("install", (e) => {

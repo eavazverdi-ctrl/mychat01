@@ -7,25 +7,32 @@
   <link rel="manifest" href="manifest.json" />
   <title>چت خصوصی (وب)</title>
   <style>
-    body{margin:0;font-family:sans-serif;background:#0f172a;color:#e5e7eb;display:flex;flex-direction:column;min-height:100vh}
-    header{padding:12px 16px;background:#111827;position:sticky;top:0;z-index:10}
+    :root{--bg:#0f172a;--panel:#111827;--bubble:#1f2937;--bubble-you:#2563eb;--text:#e5e7eb}
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;height:100%}
+    header{padding:12px 16px;background:var(--panel);position:sticky;top:0;z-index:10}
     header h1{margin:0;font-size:18px}
-    main{flex:1;display:grid;grid-template-rows:1fr auto;max-width:900px;margin:0 auto;width:100%}
-    #log{padding:12px 16px;overflow:auto}
-    .msg{margin:8px 0;display:flex;gap:10px}
+    .muted{opacity:.8;font-size:12px}
+    main{flex:1;display:flex;flex-direction:column;max-width:900px;margin:0 auto;width:100%;min-height:0}
+    #statusBar{padding:6px 16px;background:#0b1220;border-bottom:1px solid #1f2937}
+    #log{flex:1;overflow:auto;padding:12px 16px;min-height:0}
+    .msg{margin:8px 0;display:flex;gap:10px;align-items:flex-end}
     .you{justify-content:flex-end}
-    .bubble{max-width:70%;padding:10px 12px;border-radius:14px;background:#1f2937;word-wrap:break-word}
-    .you .bubble{background:#2563eb}
-    .sys{opacity:.8;font-size:12px;text-align:center;margin:8px 0}
-    form{display:flex;gap:8px;padding:12px 16px;background:#111827}
+    .bubble{max-width:75%;padding:10px 12px;border-radius:14px;background:var(--bubble);word-wrap:break-word;line-height:1.4}
+    .bubble .from{display:block;font-size:11px;opacity:.9;margin-bottom:4px}
+    .you .bubble{background:var(--bubble-you);color:#fff}
+    .sys{opacity:.9;font-size:12px;text-align:center;margin:8px 0}
+    form#chatForm{display:flex;gap:8px;padding:12px 16px;background:var(--panel);align-items:center}
     input,button{font-size:16px}
-    #text{flex:1;border-radius:12px;border:1px solid #374151;background:#0b1220;color:#e5e7eb;padding:10px}
+    #text{flex:1;border-radius:12px;border:1px solid #374151;background:#0b1220;color:var(--text);padding:10px}
     button{border:none;border-radius:12px;background:#22c55e;color:#0b1220;padding:10px 14px;font-weight:700;cursor:pointer}
     button.secondary{background:#334155;color:#e5e7eb}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .muted{opacity:.8;font-size:12px}
-    progress{width:150px;height:10px}
     a.link{color:#93c5fd}
+    #fileName{font-size:12px;opacity:.9}
+    label.file-btn{display:inline-flex;align-items:center;gap:6px;background:#334155;color:#e5e7eb;padding:10px 12px;border-radius:12px;cursor:pointer}
+    label.file-btn:disabled{opacity:.6;cursor:not-allowed}
+    input[type=file]{display:none}
   </style>
 </head>
 <body>
@@ -35,19 +42,17 @@
   </header>
 
   <main>
+    <div id="statusBar" class="muted">درحال آماده‌سازی…</div>
     <div id="log" aria-live="polite"></div>
 
-    <div style="padding:0 16px 8px">
-      <div class="row">
-        <input type="file" id="fileInput" />
-        <button id="sendFileBtn" class="secondary" title="ارسال فایل از طریق P2P">ارسال فایل</button>
-        <span id="fileStatus" class="muted"></span>
-      </div>
-    </div>
-
     <form id="chatForm">
+      <label class="file-btn" id="fileBtn">
+        📎 فایل
+        <input type="file" id="fileInput" />
+      </label>
+      <span id="fileName" class="muted"></span>
       <input id="text" placeholder="پیام خود را بنویسید…" autocomplete="off" />
-      <button type="submit">ارسال</button>
+      <button type="submit" id="sendBtn">ارسال</button>
       <button type="button" id="copyInvite" class="secondary" title="کپی لینک دعوت">کپی لینک</button>
     </form>
   </main>
