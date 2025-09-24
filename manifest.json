@@ -1,6 +1,6 @@
 {
-  "name": "چت خصوصی وب",
-  "short_name": "چت خصوصی",
+  "name": "برد پیام ساده",
+  "short_name": "برد پیام",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#0f172a",
