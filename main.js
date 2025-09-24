@@ -1,4 +1,4 @@
-// برد پیام ساده با Firebase (Firestore + Storage)، لینک ثابت، بدون WebRTC
+// برد پیام ساده با Firebase (Firestore + Storage) — بدون WebRTC
 const ROOM_ID = "global-room-1";
 
 import { FIREBASE_CONFIG } from "./config.js";
@@ -12,21 +12,19 @@ const app = initializeApp(FIREBASE_CONFIG);
 const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
-await signInAnonymously(auth);
+await signInAnonymously(auth).catch(e => addSys('خطا در ورود ناشناس به Firebase'));
 
 // --- UI
-const statusBar = document.getElementById("statusBar");
 const log = document.getElementById("log");
 const form = document.getElementById("chatForm");
 const input = document.getElementById("text");
-const sendBtn = document.getElementById("sendBtn");
 const copyInvite = document.getElementById("copyInvite");
 const fileInput = document.getElementById("fileInput");
 const fileName = document.getElementById("fileName");
 
-const me = () => auth.currentUser?.uid || Math.random().toString(36).slice(2);
+const cidPrefix = crypto.randomUUID ? crypto.randomUUID() : (Math.random().toString(36).slice(2));
+const me = () => (auth.currentUser?.uid || 'guest') + '-' + cidPrefix.slice(0,6);
 
-function setStatus(t){ statusBar.textContent = t; }
 function colorFromId(id) {
   let h = 0;
   for (let i=0;i<id.length;i++) h = (h*31 + id.charCodeAt(i)) % 360;
@@ -38,8 +36,14 @@ function el(tag, props={}, children=[]) {
   for(const c of children) e.appendChild(c);
   return e;
 }
-function addTextMessage({text, uid}){
-  const you = uid === me();
+function addSys(t){
+  const d = el('div', {className:'sys', textContent:t});
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+}
+function addTextMessage({text, uid, cid}){
+  if (renderedCids.has(cid)) return;
+  renderedCids.add(cid);
+  const you = uid.startsWith(auth.currentUser?.uid || ''); // ساده
   const wrap = el("div", {className: "msg" + (you ? " you" : "")});
   const b = el("div", {className:"bubble"});
   if (!you) b.style.background = colorFromId(uid);
@@ -49,8 +53,10 @@ function addTextMessage({text, uid}){
   log.appendChild(wrap);
   log.scrollTop = log.scrollHeight;
 }
-function addFileMessage({name, url, uid}){
-  const you = uid === me();
+function addFileMessage({name, url, uid, cid}){
+  if (renderedCids.has(cid)) return;
+  renderedCids.add(cid);
+  const you = uid.startsWith(auth.currentUser?.uid || '');
   const wrap = el("div", {className: "msg" + (you ? " you" : "")});
   const b = el("div", {className:"bubble"});
   if (!you) b.style.background = colorFromId(uid);
@@ -65,26 +71,35 @@ function addFileMessage({name, url, uid}){
 
 // --- Firestore collections
 const roomDoc = doc(db, "rooms", ROOM_ID);
-await setDoc(roomDoc, { exists: true }, { merge: true });
+await setDoc(roomDoc, { exists: true }, { merge: true }).catch(e => addSys('خطا در اتصال به Firestore'));
 const msgsCol = collection(db, "rooms", ROOM_ID, "messages");
 
-// --- live stream of messages
+// --- live stream (incremental) ---
+const renderedCids = new Set();
 onSnapshot(query(msgsCol, orderBy("t", "asc")), (snap) => {
-  log.innerHTML = ""; // ساده: کل صفحه را هر بار می‌سازیم (برای مقیاس کوچک OK)
-  snap.forEach(d => {
-    const m = d.data();
-    if (m.type === "txt") addTextMessage({text: m.text, uid: m.uid});
-    if (m.type === "file") addFileMessage({name: m.name, url: m.url, uid: m.uid});
+  snap.docChanges().forEach(ch => {
+    if (ch.type !== 'added') return;
+    const m = ch.doc.data();
+    if (m.type === "txt") addTextMessage({text: m.text, uid: m.uid, cid: m.cid || ch.doc.id});
+    if (m.type === "file") addFileMessage({name: m.name, url: m.url, uid: m.uid, cid: m.cid || ch.doc.id});
   });
-  setStatus("آماده");
+}, (err) => {
+  addSys('دریافت پیام‌ها مجاز نیست. قوانین Firestore/Storage را بررسی کنید.');
 });
 
-// --- send text
+// --- send text (optimistic render) ---
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = (input.value || "").trim();
   if (!text) return;
-  await addDoc(msgsCol, { type:"txt", text, uid: me(), t: serverTimestamp() });
+  const cid = (Date.now() + '-' + Math.random().toString(36).slice(2));
+  // optimistic
+  addTextMessage({text, uid: me(), cid});
+  try{
+    await addDoc(msgsCol, { type:"txt", text, uid: me(), cid, t: serverTimestamp() });
+  }catch(e){
+    addSys('ارسال پیام ناموفق بود (Rules/Network).');
+  }
   input.value = "";
 });
 
@@ -94,26 +109,27 @@ fileInput.addEventListener("change", async () => {
   fileName.textContent = file ? file.name : "";
   if (!file) return;
 
-  const path = `rooms/${ROOM_ID}/files/${me()}_${Date.now()}_${file.name}`;
-  const storageRef = ref(storage, path);
-  const task = uploadBytesResumable(storageRef, file);
-  setStatus("در حال آپلود فایل…");
-  task.on("state_changed", (snap) => {
-    const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-    setStatus(`آپلود: ${pct}%`);
-  }, (err) => {
-    setStatus("خطا در آپلود فایل");
-  }, async () => {
-    const url = await getDownloadURL(task.snapshot.ref);
-    await addDoc(msgsCol, { type:"file", name:file.name, url, uid:me(), t: serverTimestamp() });
-    setStatus("فایل ارسال شد.");
-    fileInput.value = "";
-    fileName.textContent = "";
-  });
+  const cid = (Date.now() + '-' + Math.random().toString(36).slice(2));
+  // upload
+  const path = `rooms/${ROOM_ID}/files/${cid}_${file.name}`;
+  try{
+    const task = uploadBytesResumable(ref(storage, path), file);
+    task.on("state_changed", ()=>{}, (err)=>{
+      addSys('خطا در آپلود فایل.'); 
+    }, async ()=>{
+      const url = await getDownloadURL(task.snapshot.ref);
+      // optimistic render
+      addFileMessage({name:file.name, url, uid:me(), cid});
+      await addDoc(msgsCol, { type:"file", name:file.name, url, uid:me(), cid, t: serverTimestamp() });
+      fileInput.value = ""; fileName.textContent = "";
+    });
+  }catch(e){
+    addSys('آپلود مجاز نیست. قوانین Storage را بررسی کنید.');
+  }
 });
 
 // --- copy invite
 copyInvite.addEventListener("click", async () => {
-  try { await navigator.clipboard.writeText(location.href); setStatus("لینک کپی شد."); }
-  catch { setStatus("خطا در کپی لینک"); }
+  try { await navigator.clipboard.writeText(location.href); addSys("لینک کپی شد."); }
+  catch { addSys("خطا در کپی لینک"); }
 });
