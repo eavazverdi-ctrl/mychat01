@@ -1,135 +1,111 @@
-// برد پیام ساده با Firebase (Firestore + Storage) — بدون WebRTC
+// برد "دکمه‌ای" با polling دوره‌ای از Firestore + Storage
 const ROOM_ID = "global-room-1";
+const POLL_MS = 3000; // هر ۳ ثانیه
 
 import { FIREBASE_CONFIG } from "./config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, serverTimestamp, getDocs, orderBy, query, doc, setDoc, limit } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
 
-// --- init
 const app = initializeApp(FIREBASE_CONFIG);
 const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
-await signInAnonymously(auth).catch(e => addSys('خطا در ورود ناشناس به Firebase'));
+await signInAnonymously(auth);
 
-// --- UI
-const log = document.getElementById("log");
+const board = document.getElementById("board");
 const form = document.getElementById("chatForm");
 const input = document.getElementById("text");
 const copyInvite = document.getElementById("copyInvite");
 const fileInput = document.getElementById("fileInput");
-const fileName = document.getElementById("fileName");
 
-const cidPrefix = crypto.randomUUID ? crypto.randomUUID() : (Math.random().toString(36).slice(2));
-const me = () => (auth.currentUser?.uid || 'guest') + '-' + cidPrefix.slice(0,6);
+const uidPart = () => (auth.currentUser?.uid || "guest").slice(0,6);
+const myKey = uidPart() + "-" + (Math.random().toString(36).slice(2,6));
 
-function colorFromId(id) {
-  let h = 0;
-  for (let i=0;i<id.length;i++) h = (h*31 + id.charCodeAt(i)) % 360;
-  return `hsl(${h} 70% 35%)`;
-}
-function el(tag, props={}, children=[]) {
-  const e = document.createElement(tag);
-  Object.assign(e, props);
-  for(const c of children) e.appendChild(c);
-  return e;
-}
-function addSys(t){
-  const d = el('div', {className:'sys', textContent:t});
-  log.appendChild(d); log.scrollTop = log.scrollHeight;
-}
-function addTextMessage({text, uid, cid}){
-  if (renderedCids.has(cid)) return;
-  renderedCids.add(cid);
-  const you = uid.startsWith(auth.currentUser?.uid || ''); // ساده
-  const wrap = el("div", {className: "msg" + (you ? " you" : "")});
-  const b = el("div", {className:"bubble"});
-  if (!you) b.style.background = colorFromId(uid);
-  b.appendChild(el("span", {className:"from", textContent: you? "شما" : uid.slice(0,6)}));
-  b.appendChild(el("div", {textContent: text}));
-  wrap.appendChild(b);
-  log.appendChild(wrap);
-  log.scrollTop = log.scrollHeight;
-}
-function addFileMessage({name, url, uid, cid}){
-  if (renderedCids.has(cid)) return;
-  renderedCids.add(cid);
-  const you = uid.startsWith(auth.currentUser?.uid || '');
-  const wrap = el("div", {className: "msg" + (you ? " you" : "")});
-  const b = el("div", {className:"bubble"});
-  if (!you) b.style.background = colorFromId(uid);
-  b.appendChild(el("span", {className:"from", textContent: you? "شما" : uid.slice(0,6)}));
-  const a = el("a", {href:url, textContent:`📄 دریافت فایل: ${name}`, className:"link"});
-  a.setAttribute("download", name);
-  b.appendChild(a);
-  wrap.appendChild(b);
-  log.appendChild(wrap);
-  log.scrollTop = log.scrollHeight;
-}
-
-// --- Firestore collections
+// Firestore refs
 const roomDoc = doc(db, "rooms", ROOM_ID);
-await setDoc(roomDoc, { exists: true }, { merge: true }).catch(e => addSys('خطا در اتصال به Firestore'));
+await setDoc(roomDoc, { exists: true }, { merge: true });
 const msgsCol = collection(db, "rooms", ROOM_ID, "messages");
 
-// --- live stream (incremental) ---
-const renderedCids = new Set();
-onSnapshot(query(msgsCol, orderBy("t", "asc")), (snap) => {
-  snap.docChanges().forEach(ch => {
-    if (ch.type !== 'added') return;
-    const m = ch.doc.data();
-    if (m.type === "txt") addTextMessage({text: m.text, uid: m.uid, cid: m.cid || ch.doc.id});
-    if (m.type === "file") addFileMessage({name: m.name, url: m.url, uid: m.uid, cid: m.cid || ch.doc.id});
-  });
-}, (err) => {
-  addSys('دریافت پیام‌ها مجاز نیست. قوانین Firestore/Storage را بررسی کنید.');
-});
+// render helpers
+const rendered = new Set();
+function colorFromId(id) {
+  let h = 0; for (let i=0;i<id.length;i++) h=(h*31+id.charCodeAt(i))%360;
+  return `hsl(${h} 70% 35%)`;
+}
+function addTile({you, who, contentEl}) {
+  const tile = document.createElement('div');
+  tile.className = 'tile' + (you ? ' you' : '');
+  if (!you) tile.style.background = colorFromId(who);
+  const whoEl = document.createElement('div');
+  whoEl.className = 'who';
+  whoEl.textContent = you ? 'شما' : who;
+  tile.appendChild(whoEl);
+  tile.appendChild(contentEl);
+  board.appendChild(tile);
+  board.scrollTop = board.scrollHeight;
+}
+function renderText({text, uid, cid}){
+  if (rendered.has(cid)) return; rendered.add(cid);
+  const el = document.createElement('div'); el.className='txt'; el.textContent = text;
+  addTile({you: uid.startsWith(auth.currentUser?.uid || ''), who: uid.slice(0,6), contentEl: el});
+}
+function renderFile({name, url, uid, cid}){
+  if (rendered.has(cid)) return; rendered.add(cid);
+  const a = document.createElement('a'); a.href=url; a.textContent = '📄 ' + name; a.className='filelink'; a.download = name;
+  addTile({you: uid.startsWith(auth.currentUser?.uid || ''), who: uid.slice(0,6), contentEl: a});
+}
 
-// --- send text (optimistic render) ---
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = (input.value || "").trim();
-  if (!text) return;
-  const cid = (Date.now() + '-' + Math.random().toString(36).slice(2));
-  // optimistic
-  addTextMessage({text, uid: me(), cid});
+// polling fetch
+async function fetchLatest(){
   try{
-    await addDoc(msgsCol, { type:"txt", text, uid: me(), cid, t: serverTimestamp() });
-  }catch(e){
-    addSys('ارسال پیام ناموفق بود (Rules/Network).');
-  }
-  input.value = "";
-});
-
-// --- choose & upload file
-fileInput.addEventListener("change", async () => {
-  const file = fileInput.files?.[0];
-  fileName.textContent = file ? file.name : "";
-  if (!file) return;
-
-  const cid = (Date.now() + '-' + Math.random().toString(36).slice(2));
-  // upload
-  const path = `rooms/${ROOM_ID}/files/${cid}_${file.name}`;
-  try{
-    const task = uploadBytesResumable(ref(storage, path), file);
-    task.on("state_changed", ()=>{}, (err)=>{
-      addSys('خطا در آپلود فایل.'); 
-    }, async ()=>{
-      const url = await getDownloadURL(task.snapshot.ref);
-      // optimistic render
-      addFileMessage({name:file.name, url, uid:me(), cid});
-      await addDoc(msgsCol, { type:"file", name:file.name, url, uid:me(), cid, t: serverTimestamp() });
-      fileInput.value = ""; fileName.textContent = "";
+    const q = query(msgsCol, orderBy('t','asc'));
+    const snap = await getDocs(q);
+    snap.forEach(d=>{
+      const m = d.data();
+      const cid = m.cid || d.id;
+      if (m.type === 'txt') renderText({text:m.text, uid:m.uid, cid});
+      if (m.type === 'file') renderFile({name:m.name, url:m.url, uid:m.uid, cid});
     });
   }catch(e){
-    addSys('آپلود مجاز نیست. قوانین Storage را بررسی کنید.');
+    // silently ignore; usually Rules issue
   }
+}
+// start polling
+await fetchLatest();
+setInterval(fetchLatest, POLL_MS);
+
+// send text (optimistic tile)
+form.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const text = (input.value||'').trim();
+  if (!text) return;
+  const cid = Date.now() + '-' + Math.random().toString(36).slice(2);
+  renderText({text, uid: auth.currentUser?.uid || 'guest', cid});
+  input.value='';
+  try{
+    await addDoc(msgsCol, {type:'txt', text, uid: auth.currentUser?.uid || 'guest', cid, t: serverTimestamp()});
+  }catch(e){ /* ignore */ }
 });
 
-// --- copy invite
-copyInvite.addEventListener("click", async () => {
-  try { await navigator.clipboard.writeText(location.href); addSys("لینک کپی شد."); }
-  catch { addSys("خطا در کپی لینک"); }
+// choose & upload file (optimistic tile after upload)
+fileInput.addEventListener('change', async ()=>{
+  const file = fileInput.files?.[0];
+  if (!file) return;
+  const cid = Date.now() + '-' + Math.random().toString(36).slice(2);
+  try{
+    const path = `rooms/${ROOM_ID}/files/${cid}_${file.name}`;
+    const task = uploadBytesResumable(ref(storage, path), file);
+    task.on('state_changed', ()=>{}, ()=>{}, async ()=>{
+      const url = await getDownloadURL(task.snapshot.ref);
+      renderFile({name:file.name, url, uid: auth.currentUser?.uid || 'guest', cid});
+      await addDoc(msgsCol, {type:'file', name:file.name, url, uid: auth.currentUser?.uid || 'guest', cid, t: serverTimestamp()});
+      fileInput.value='';
+    });
+  }catch(e){ /* ignore */ }
+});
+
+copyInvite.addEventListener('click', async ()=>{
+  try{ await navigator.clipboard.writeText(location.href); } catch {}
 });

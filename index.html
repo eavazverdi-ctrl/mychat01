@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
   <link rel="manifest" href="manifest.json" />
-  <title>برد پیام ساده (وب)</title>
+  <title>برد دکمه‌ای (وب)</title>
   <style>
-    :root{--bg:#0f172a;--panel:#111827;--bubble:#1f2937;--you:#2563eb;--text:#e5e7eb;--border:#243041}
+    :root{--bg:#0f172a;--panel:#111827;--btn:#1f2937;--you:#2563eb;--text:#e5e7eb;--border:#243041}
     *{box-sizing:border-box}
     html,body{height:100%}
     body{margin:0;font-family:sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;height:100%}
@@ -15,39 +15,35 @@
     header h1{margin:0;font-size:18px}
     .muted{opacity:.85;font-size:12px}
     main{flex:1;display:flex;flex-direction:column;max-width:900px;margin:0 auto;width:100%;min-height:0;padding:12px 16px;gap:10px}
-    #log{flex:1;overflow:auto;min-height:0;border:1px solid var(--border);border-radius:12px;background:#0b1220;padding:12px}
-    .msg{margin:8px 0;display:flex;gap:10px;align-items:flex-end}
-    .you{justify-content:flex-end}
-    .bubble{max-width:75%;padding:10px 12px;border-radius:14px;background:var(--bubble);word-wrap:break-word;line-height:1.5}
-    .bubble .from{display:block;font-size:11px;opacity:.9;margin-bottom:4px}
-    .you .bubble{background:var(--you);color:#fff}
-    .sys{opacity:.9;font-size:12px;text-align:center;margin:8px 0}
+    #board{flex:1;overflow:auto;min-height:0;border:1px solid var(--border);border-radius:12px;background:#0b1220;padding:12px;display:flex;flex-direction:column;gap:10px}
+    .tile{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-radius:14px;border:1px solid var(--border);background:var(--btn);color:var(--text);box-shadow:0 2px 6px rgba(0,0,0,.25);max-width:80%}
+    .tile.you{align-self:flex-end;background:var(--you);color:#fff}
+    .who{font-size:11px;opacity:.9}
+    .txt{white-space:pre-wrap;line-height:1.5}
+    .filelink{color:#93c5fd;text-decoration:none}
     form#chatForm{display:flex;gap:8px;padding:12px 16px;background:var(--panel);align-items:center;border-radius:12px}
     input,button{font-size:16px}
     #text{flex:1;border-radius:12px;border:1px solid #374151;background:#0b1220;color:var(--text);padding:10px}
     button{border:none;border-radius:12px;background:#22c55e;color:#0b1220;padding:10px 14px;font-weight:700;cursor:pointer}
     button.secondary{background:#334155;color:#e5e7eb}
-    a.link{color:#93c5fd}
-    #fileName{font-size:12px;opacity:.9}
     label.file-btn{display:inline-flex;align-items:center;gap:6px;background:#334155;color:#e5e7eb;padding:10px 12px;border-radius:12px;cursor:pointer}
     input[type=file]{display:none}
   </style>
 </head>
 <body>
   <header>
-    <h1>برد پیام ساده (لینک ثابت)</h1>
-    <div class="muted">این صفحه را به Home Screen اضافه کنید؛ لینک: همین آدرس</div>
+    <h1>برد دکمه‌ای (لینک ثابت)</h1>
+    <div class="muted">Add to Home Screen؛ لینک: همین آدرس</div>
   </header>
 
   <main>
-    <div id="log" aria-live="polite"></div>
+    <div id="board" aria-live="polite"></div>
 
     <form id="chatForm">
       <label class="file-btn">
         📎 فایل
         <input type="file" id="fileInput" />
       </label>
-      <span id="fileName" class="muted"></span>
       <input id="text" placeholder="پیام خود را بنویسید…" autocomplete="off" />
       <button type="submit" id="sendBtn">ارسال</button>
       <button type="button" id="copyInvite" class="secondary" title="کپی لینک دعوت">کپی لینک</button>

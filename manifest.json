@@ -1,6 +1,6 @@
 {
-  "name": "برد پیام ساده",
-  "short_name": "برد پیام",
+  "name": "برد دکمه‌ای",
+  "short_name": "برد دکمه‌ای",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#0f172a",
